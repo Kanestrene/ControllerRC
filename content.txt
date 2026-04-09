@@ -1,0 +1,9 @@
+env\Scripts\activate 
+
+Pack1 --> Controlo com Pure Pursuit, variáveis de controlo v e w
+
+Pack2 --> Controlo com Lyapunov, variáveis de controlo v e w
+
+Pack3 --> Controlo com Pure Pursuit, variáveis de controlo a e alfa
+
+Pack4 --> Controlo com Lyapunov, variáveis de controlo a e alfa
