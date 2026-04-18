@@ -3,6 +3,7 @@ import numpy as np
 import qp
 import socket
 import json
+from shared_config import OBSTACLES_M, TRACK_POINTS_M
 
 from controller import (
     build_spline_path,
@@ -20,22 +21,6 @@ from car_interface import CarController
 VISION_UDP_IP = "0.0.0.0"
 VISION_UDP_PORT = 5005
 VISION_TRACK_ID = 2
-TRACK_POINTS_M = [
-    (0.8, 0.0),
-    (1.0, 0.2),
-    (0.95, 1.55),
-    (0.6, 1.75),
-    (0.23, 1.62),
-    (0.185, 1.02),
-    (-0.15, 0.87),
-    (-0.45, 1.03),
-    (-0.44, 1.58),
-    (-0.67, 1.7),
-    (-0.96, 1.63),
-    (-0.94, 0.14),
-]
-
-
 ROUND_CORNER_RADIUS_M = 0.08
 ROUND_CORNER_SAMPLES = 10
 
@@ -228,7 +213,7 @@ def run_real():
     idxs = np.linspace(0, len(px) - 1, n_obs + 2, dtype=int)[1:-1]
 
     
-    obstacles = []
+    obstacles = [dict(obstacle) for obstacle in OBSTACLES_M]
     '''
     for k, idx in enumerate(idxs):
         x_path = px[idx]
@@ -248,12 +233,6 @@ def run_real():
         })
     '''
 
-    obstacles.append({
-            "x": 0.934,
-            "y": 0.764,
-            "r": 0.1
-    })
-
     # parâmetros
     dt = 0.02
     v_ref = 0.35
@@ -261,7 +240,7 @@ def run_real():
     kv = 0.4
 
     v_max = 0.47
-    #w_max = 2.5
+    w_max = 2.5
     a_max = 2.0
 
     a_ell, b_ell = 0.03, 0.03
@@ -298,40 +277,38 @@ def run_real():
             # ler estado REAL
             x, y, yaw, v = get_robot_state()
 
-            # pure pursuit
-            Ld = L0 + kv * abs(v)
-            #Ld = 0.1
-            state = (x, y, yaw, v)
-
-            v_cmd, w_cmd, target_idx, last_near, cte = pure_pursuit_control(
-                px, py, state,
-                last_near_idx=last_near,
-                Ld=Ld,
-                v_ref=v_ref
-            )            
+            # nominal simples
+            v_nom = v_ref
+            w_nom = 0.0         
             
-            v_cmd = np.clip(v_cmd, -v_max, v_max)
-            w_max = abs(v_cmd) * kappa_max
-            w_cmd = np.clip(w_cmd, -w_max, w_max)
-
             # limitar aceleração
             #dv = np.clip(v_cmd - v, -a_max * dt, a_max * dt)
             #v_cmd = v + dv
 
-            # CBF
-            v_safe, w_safe = qp.cbf_qp_filter(
-                u_nom=(v_cmd, w_cmd),
+            
+            # CBF + CLF (Lyapunov), igual ao Pack2
+            (u_safe, clf_info) = qp.cbf_clf_qp_filter(
+                u_nom=(v_nom, w_nom),
                 robot_state=(x, y, yaw),
                 obstacles=obstacles,
+                px=px, py=py, pyaw=pyaw, s=s,
+                last_path_idx=last_near,
                 ellipse_ab=(a_ell, b_ell),
                 margin=margin,
                 lookahead_l=0.1,
                 alpha=2.5,
+                eps_clf=0.5,
+                q_clf=(1.0, 10.0, 0.01),
                 W=(250.0, 1.0),
+                p_slack=50.0,
+                v_ref=v_ref,
                 v_bounds=(0.0, 2.0),
-                w_bounds=(-w_max, w_max),
+                kappa_max=kappa_max,
             )
 
+            v_safe, w_safe = u_safe
+            last_near = clf_info["idx"]
+            cte = clf_info["ey"]
             v_safe = np.clip(v_safe, -v_max, v_max)
 
             kappa_max = np.tan(delta_max) / L

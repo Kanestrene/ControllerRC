@@ -6,6 +6,7 @@ import cv2
 from pupil_apriltags import Detector
 from ultralytics import YOLO
 import time
+from shared_config import OBSTACLES_M, TRACK_POINTS_M
 
 # =========================
 # CONFIG
@@ -33,24 +34,8 @@ REF_PX_X_AXIS = (892.0, 600.0)
 REF_X_METERS = 0.9
 
 # Pontos em metros para desenhar no frame
-MARK_POINTS_M = [
-    (0.0, 0.0),
-    (0.8, 0.0),
-    (1.0, 0.2),
-    (0.95, 1.55),
-    (0.6, 1.75),
-    (0.23, 1.62),
-    (0.185, 1.02),
-    (-0.15, 0.87),
-    (-0.45, 1.03),
-    (-0.44, 1.58),
-    (-0.67, 1.7),
-    (-0.96, 1.63),
-    (-0.94, 0.14),
-]
-DRAW_OBSTACLES_M = [
-    {"x": 0.934, "y": 0.764, "r": 0.1},
-]
+MARK_POINTS_M = [(0.0, 0.0), *TRACK_POINTS_M]
+DRAW_OBSTACLES_M = [dict(obstacle) for obstacle in OBSTACLES_M]
 ROUND_CORNER_RADIUS_M = 0.08
 ROUND_CORNER_SAMPLES = 10
 THETA_MIN_STEP_M = 0.003

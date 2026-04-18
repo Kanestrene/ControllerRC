@@ -133,7 +133,7 @@ def simulate():
     
     
     # Estado inicial
-    x, y, yaw, v = 3, 3, np.deg2rad(90), 0.0
+    x, y, yaw, v = 2, 6, np.deg2rad(90), 0.0
 
     dt = 0.02
     T = 50.0
@@ -199,9 +199,9 @@ def simulate():
             last_path_idx=last_near,
             ellipse_ab=(a_ell, b_ell),
             margin=margin,
-            lookahead_l=0.01,
-            alpha=3,
-            eps_clf=0.5,
+            lookahead_l=0.1,
+            alpha=5,
+            eps_clf=4,
             q_clf=(1.0, 10.0, 0.01),
             W=(100000.0, 1.0),
             p_slack=50.0,

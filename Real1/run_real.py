@@ -3,6 +3,7 @@ import numpy as np
 import qp
 import socket
 import json
+from shared_config import OBSTACLES_M, TRACK_POINTS_M
 
 from controller import (
     build_spline_path,
@@ -20,22 +21,6 @@ from car_interface import CarController
 VISION_UDP_IP = "0.0.0.0"
 VISION_UDP_PORT = 5005
 VISION_TRACK_ID = 2
-TRACK_POINTS_M = [
-    (0.8, 0.0),
-    (1.0, 0.2),
-    (0.95, 1.55),
-    (0.6, 1.75),
-    (0.23, 1.62),
-    (0.185, 1.02),
-    (-0.15, 0.87),
-    (-0.45, 1.03),
-    (-0.44, 1.58),
-    (-0.67, 1.7),
-    (-0.96, 1.63),
-    (-0.94, 0.14),
-]
-
-
 ROUND_CORNER_RADIUS_M = 0.08
 ROUND_CORNER_SAMPLES = 10
 
@@ -115,9 +100,6 @@ class VisionPoseReceiver:
 
         if not self.has_state:
             raise RuntimeError("Sem estado da visao ainda (aguardando UDP na porta 5005).")
-
-        if not got_new_packet:
-            self.v = 0.0
 
         return self.x, self.y, self.theta, self.v
 
@@ -228,7 +210,7 @@ def run_real():
     idxs = np.linspace(0, len(px) - 1, n_obs + 2, dtype=int)[1:-1]
 
     
-    obstacles = []
+    obstacles = [dict(obstacle) for obstacle in OBSTACLES_M]
     '''
     for k, idx in enumerate(idxs):
         x_path = px[idx]
@@ -248,15 +230,9 @@ def run_real():
         })
     '''
 
-    obstacles.append({
-            "x": 0.934,
-            "y": 0.764,
-            "r": 0.1
-    })
-
     # parâmetros
     dt = 0.02
-    v_ref = 0.35
+    v_ref = 0.38
     L0 = 0.3
     kv = 0.4
 
@@ -348,7 +324,7 @@ def run_real():
             # enviar para o carro
             #car.send_heartbeat()
             car.send_cmd(v=v_safe, delta=delta)
-            #car.send_cmd(v=0.3, delta=0.15)
+            #car.send_cmd(v=0.35, delta=0)
             
             # debug
             print(

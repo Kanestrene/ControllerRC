@@ -1,3 +1,0 @@
-fig1.py --> distancia entre veiculo e obstaculo
-
-fig2.py --> Mudança da posição de lookhaed com rotação do veiculo

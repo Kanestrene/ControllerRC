@@ -6,6 +6,7 @@ import cv2
 from pupil_apriltags import Detector
 from ultralytics import YOLO
 import time
+from shared_config import OBSTACLES_M, TRACK_POINTS_M
 
 # =========================
 # CONFIG
@@ -33,26 +34,11 @@ REF_PX_X_AXIS = (892.0, 600.0)
 REF_X_METERS = 0.9
 
 # Pontos em metros para desenhar no frame
-MARK_POINTS_M = [
-    (0.0, 0.0),
-    (0.8, 0.0),
-    (1.0, 0.2),
-    (0.95, 1.55),
-    (0.6, 1.75),
-    (0.23, 1.62),
-    (0.185, 1.02),
-    (-0.15, 0.87),
-    (-0.45, 1.03),
-    (-0.44, 1.58),
-    (-0.67, 1.7),
-    (-0.96, 1.63),
-    (-0.94, 0.14),
-]
-DRAW_OBSTACLES_M = [
-    {"x": 0.934, "y": 0.764, "r": 0.1},
-]
+MARK_POINTS_M = [(0.0, 0.0), *TRACK_POINTS_M]
+DRAW_OBSTACLES_M = [dict(obstacle) for obstacle in OBSTACLES_M]
 ROUND_CORNER_RADIUS_M = 0.08
 ROUND_CORNER_SAMPLES = 10
+RAW_SPEED_UPDATE_CYCLES = 1
 THETA_MIN_STEP_M = 0.003
 THETA_MIN_SPEED_M_S = 0.03
 
@@ -321,16 +307,32 @@ def update_raw_theta(track, x_m, y_m, t_now):
     track["raw_x_m"] = float(x_m)
     track["raw_y_m"] = float(y_m)
 
+    speed_anchor_pos_m = track.get("raw_speed_anchor_pos_m")
+    speed_anchor_t = track.get("raw_speed_anchor_t")
+    speed_cycle_count = int(track.get("raw_speed_cycle_count", 0))
+    if speed_anchor_pos_m is None or speed_anchor_t is None:
+        track["raw_speed_anchor_pos_m"] = (x_m, y_m)
+        track["raw_speed_anchor_t"] = float(t_now)
+        track["raw_speed_cycle_count"] = 0
+    else:
+        speed_cycle_count += 1
+        if speed_cycle_count >= RAW_SPEED_UPDATE_CYCLES:
+            dx_speed = x_m - speed_anchor_pos_m[0]
+            dy_speed = y_m - speed_anchor_pos_m[1]
+            dt_speed = max(1e-6, float(t_now - speed_anchor_t))
+            track["raw_speed_m_s"] = float(np.hypot(dx_speed, dy_speed)) / dt_speed
+            track["raw_speed_anchor_pos_m"] = (x_m, y_m)
+            track["raw_speed_anchor_t"] = float(t_now)
+            track["raw_speed_cycle_count"] = 0
+        else:
+            track["raw_speed_cycle_count"] = speed_cycle_count
+
     prev_raw_pos_m = track.get("prev_raw_pos_m")
     prev_raw_t = track.get("prev_raw_t")
     if prev_raw_pos_m is not None:
         dx = x_m - prev_raw_pos_m[0]
         dy = y_m - prev_raw_pos_m[1]
         step_m = float(np.hypot(dx, dy))
-        dt = None if prev_raw_t is None else max(1e-6, float(t_now - prev_raw_t))
-
-        if dt is not None:
-            track["raw_speed_m_s"] = step_m / dt
 
         if step_m >= THETA_MIN_STEP_M:
             theta_raw = float(np.arctan2(dy, dx))
@@ -645,6 +647,9 @@ def make_track(x0, y0, t_now, state_label, source, temp_id=None, tag_id=None):
         "prev_pos_m": None,
         "prev_raw_pos_m": None,
         "prev_raw_t": None,
+        "raw_speed_anchor_pos_m": None,
+        "raw_speed_anchor_t": None,
+        "raw_speed_cycle_count": 0,
         "raw_x_m": None,
         "raw_y_m": None,
     }

@@ -8,6 +8,9 @@ Pack3 --> Controlo com Pure Pursuit, variáveis de controlo a e alfa
 
 Pack4 --> Controlo com Lyapunov, variáveis de controlo a e alfa
 
-Real1 --> Controlo com PP u=(v,w) 1 obstaculo
+Real1 --> Controlo com PP u=(v,w) 
 
-Real2 --> Controlo com PP u=(v,w) vários obstaculo
+Real2 --> Controlo com CLF u=(v,w) 
+
+Real3 --> Controlo com CLF U=(a,alpha)
+
