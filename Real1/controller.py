@@ -51,7 +51,7 @@ def nearest_point_index(px, py, x, y, last_idx=0, search_window=300):
 # -----------------------------
 # Pure Pursuit (para unicycle -> w)
 # -----------------------------
-def pure_pursuit_control(px, py, state, last_near_idx, Ld=0.9, v_ref=1.0):
+def pure_pursuit_control(px, py, state, last_near_idx, Ld=0.9, v_ref=1.0, k_pp=2.0):
     x, y, yaw, v = state
     n = len(px)
 
@@ -70,7 +70,8 @@ def pure_pursuit_control(px, py, state, last_near_idx, Ld=0.9, v_ref=1.0):
     angle_to_target = np.arctan2(ty - y, tx - x)
     alpha = wrap_to_pi(angle_to_target - yaw)
 
-    kappa = 2.0 * np.sin(alpha) / max(1e-3, Ld)
+    # k_pp permite afinar a agressividade do pure pursuit sem mudar a geometria base.
+    kappa = k_pp * np.sin(alpha) / max(1e-3, Ld)
     v_cmd = v_ref
     w_cmd = v_cmd * kappa
 

@@ -17,7 +17,8 @@ PC_PORT = 5005
 SHOW_WINDOW = True
 SHOW_MASK = True
 SHOW_HEATMAPS = True
-SHOW_REFERENCE_PATH = False
+SHOW_REFERENCE_PATH = True
+SHOW_TRACK_TRAIL = True
 SEND_UDP = True
 
 WIDTH, HEIGHT = 1280, 720
@@ -37,6 +38,8 @@ MARK_POINTS_M = [(0.0, 0.0), *TRACK_POINTS_M]
 DRAW_OBSTACLES_M = [dict(obstacle) for obstacle in OBSTACLES_M]
 ROUND_CORNER_RADIUS_M = 0.08
 ROUND_CORNER_SAMPLES = 10
+TRACK_TRAIL_MAX_POINTS = 120
+TRACK_TRAIL_MIN_STEP_PX = 6.0
 
 if REF_PX_X_AXIS[0] == REF_PX_ORIGIN[0]:
     raise ValueError("Referencia invalida: pontos de calibracao com o mesmo x em pixels.")
@@ -199,9 +202,12 @@ def update_raw_theta(track, x_m, y_m, t_now):
 
 
 def update_track_theta(track):
-    x_px, y_px, vx, vy, *_ = track["kf"].get()
+    x_px = float(track.get("x_px", 0.0))
+    y_px = float(track.get("y_px", 0.0))
+    vx_px_s = float(track.get("vx_px_s", 0.0))
+    vy_px_s = float(track.get("vy_px_s", 0.0))
     x_m, y_m = px_to_m(x_px, y_px)
-    vx_m_s, vy_m_s = vel_px_to_m(vx, vy)
+    vx_m_s, vy_m_s = vel_px_to_m(vx_px_s, vy_px_s)
     speed_m_s = float(np.hypot(vx_m_s, vy_m_s))
 
     prev_pos_m = track.get("prev_pos_m")
@@ -266,6 +272,7 @@ USE_BLOB = False   # <── False = apenas YOLO; True = YOLO + blobs
 # YOLO
 YOLO_MODEL_PATH = r"C:\Users\Pedru\OneDrive\Área de Trabalho\ControllerRC\best.pt"
 YOLO_CONF_THRESH = 0.5
+YOLO_DRAW_RADIUS_M = 0.3
 
 # ROI da pista
 TRACK_POLYGON = np.array([
@@ -384,7 +391,12 @@ def get_cell(x, y):
 
 
 def find_best_blob_for_track(track, detections, max_dist=None):
-    x_pred, y_pred, *_ = track["kf"].get()
+    last_meas = track.get("last_meas")
+    if last_meas is not None:
+        x_ref, y_ref = float(last_meas[0]), float(last_meas[1])
+    else:
+        x_ref = float(track.get("x_px", 0.0))
+        y_ref = float(track.get("y_px", 0.0))
 
     if max_dist is None:
         max_dist = get_dynamic_vision_gate(track)
@@ -397,7 +409,7 @@ def find_best_blob_for_track(track, detections, max_dist=None):
             continue
 
         cx, cy = det["center"]
-        d = dist2d(cx, cy, x_pred, y_pred)
+        d = dist2d(cx, cy, x_ref, y_ref)
 
         if d < best_dist and d < max_dist:
             best_dist = d
@@ -416,8 +428,13 @@ def find_best_track_for_tag(x_meas, y_meas, tracks_dict, max_dist=TAG_ATTACH_DIS
     best_dist = float("inf")
 
     for key, tr in tracks_dict.items():
-        x_pred, y_pred, *_ = tr["kf"].get()
-        d = dist2d(x_meas, y_meas, x_pred, y_pred)
+        last_meas = tr.get("last_meas")
+        if last_meas is not None:
+            x_ref, y_ref = float(last_meas[0]), float(last_meas[1])
+        else:
+            x_ref = float(tr.get("x_px", 0.0))
+            y_ref = float(tr.get("y_px", 0.0))
+        d = dist2d(x_meas, y_meas, x_ref, y_ref)
 
         if d < best_dist and d < max_dist:
             best_dist = d
@@ -577,78 +594,14 @@ class VehicleBlobDetector:
         return detections, mask
 
 
-# =========================
-# KALMAN
-# =========================
-class KalmanCA2D:
-    def __init__(self, x0, y0):
-        self.x = np.array([[x0], [y0], [0.0], [0.0], [0.0], [0.0]], dtype=float)
-
-        self.P = np.diag([
-            20.0, 20.0,
-            1500.0, 1500.0,
-            8000.0, 8000.0
-        ])
-
-        self.H = np.zeros((2, 6), dtype=float)
-        self.H[0, 0] = 1.0
-        self.H[1, 1] = 1.0
-
-        self.R_tag = np.diag([9.0, 9.0]).astype(float)
-        self.R_vis = np.diag([49.0, 49.0]).astype(float)
-
-        self.I = np.eye(6, dtype=float)
-
-    def _F(self, dt):
-        dt2 = dt * dt
-        return np.array([
-            [1, 0, dt, 0, 0.5 * dt2, 0],
-            [0, 1, 0, dt, 0, 0.5 * dt2],
-            [0, 0, 1, 0, dt, 0],
-            [0, 0, 0, 1, 0, dt],
-            [0, 0, 0, 0, 1, 0],
-            [0, 0, 0, 0, 0, 1]
-        ], dtype=float)
-
-    def _Q(self, dt):
-        return np.diag([
-            1.0 * dt * dt,
-            1.0 * dt * dt,
-            15.0 * dt,
-            15.0 * dt,
-            40.0,
-            40.0
-        ]).astype(float)
-
-    def predict(self, dt):
-        F = self._F(dt)
-        Q = self._Q(dt)
-        self.x = F @ self.x
-        self.P = F @ self.P @ F.T + Q
-
-    def update_with_R(self, z, R):
-        y = z - self.H @ self.x
-        S = self.H @ self.P @ self.H.T + R
-        K = self.P @ self.H.T @ np.linalg.inv(S)
-        self.x = self.x + K @ y
-        self.P = (self.I - K @ self.H) @ self.P
-
-    def update_tag(self, z):
-        self.update_with_R(z, self.R_tag)
-
-    def update_vision(self, z):
-        self.update_with_R(z, self.R_vis)
-
-    def get(self):
-        return self.x.flatten()
-
-
-# =========================
-# TRACK HELPERS
-# =========================
 def make_track(x0, y0, t_now, state_label, source, temp_id=None, tag_id=None):
     return {
-        "kf": KalmanCA2D(x0, y0),
+        "x_px": float(x0),
+        "y_px": float(y0),
+        "vx_px_s": 0.0,
+        "vy_px_s": 0.0,
+        "ax_px_s2": 0.0,
+        "ay_px_s2": 0.0,
         "t_last": t_now,
         "missed": 0,
         "seen_this_frame": True,
@@ -671,19 +624,59 @@ def make_track(x0, y0, t_now, state_label, source, temp_id=None, tag_id=None):
         "raw_theta_anchor_pos_m": None,
         "raw_x_m": None,
         "raw_y_m": None,
+        "trail_px": [(float(x0), float(y0))],
     }
 
 
-def predict_track(track, t_now):
+def append_track_trail(track, x_px, y_px):
+    trail = track.setdefault("trail_px", [])
+    point = (float(x_px), float(y_px))
+
+    if trail:
+        last_x, last_y = trail[-1]
+        if dist2d(last_x, last_y, point[0], point[1]) < TRACK_TRAIL_MIN_STEP_PX:
+            trail[-1] = point
+        else:
+            trail.append(point)
+    else:
+        trail.append(point)
+
+    if len(trail) > TRACK_TRAIL_MAX_POINTS:
+        del trail[:-TRACK_TRAIL_MAX_POINTS]
+
+
+def prepare_track_for_frame(track):
     track["seen_this_frame"] = False
-    dt = clamp_dt(t_now - track["t_last"])
-    track["kf"].predict(dt)
-    track["state_label"] = "PRED"
+
+
+def update_track_motion(track, x_meas, y_meas, t_now):
+    prev_meas = track.get("last_meas")
+    prev_t = track.get("t_last")
+
+    if prev_meas is not None and prev_t is not None:
+        dt = max(1e-6, float(t_now - prev_t))
+        prev_vx = float(track.get("vx_px_s", 0.0))
+        prev_vy = float(track.get("vy_px_s", 0.0))
+        vx_px_s = (float(x_meas) - float(prev_meas[0])) / dt
+        vy_px_s = (float(y_meas) - float(prev_meas[1])) / dt
+        ax_px_s2 = (vx_px_s - prev_vx) / dt
+        ay_px_s2 = (vy_px_s - prev_vy) / dt
+    else:
+        vx_px_s = 0.0
+        vy_px_s = 0.0
+        ax_px_s2 = 0.0
+        ay_px_s2 = 0.0
+
+    track["x_px"] = float(x_meas)
+    track["y_px"] = float(y_meas)
+    track["vx_px_s"] = float(vx_px_s)
+    track["vy_px_s"] = float(vy_px_s)
+    track["ax_px_s2"] = float(ax_px_s2)
+    track["ay_px_s2"] = float(ay_px_s2)
 
 
 def update_track_with_tag(track, x_meas, y_meas, t_now):
-    z = np.array([[x_meas], [y_meas]], dtype=float)
-    track["kf"].update_tag(z)
+    update_track_motion(track, x_meas, y_meas, t_now)
     track["t_last"] = t_now
     track["missed"] = 0
     track["seen_this_frame"] = True
@@ -691,17 +684,20 @@ def update_track_with_tag(track, x_meas, y_meas, t_now):
     track["last_meas"] = (x_meas, y_meas)
     track["last_source"] = "tag"
     track["hits"] += 1
+    append_track_trail(track, x_meas, y_meas)
+    x_m, y_m = px_to_m(x_meas, y_meas)
+    update_raw_theta(track, x_m, y_m, t_now)
 
 
 def update_track_with_vision(track, cx, cy, t_now):
-    z = np.array([[cx], [cy]], dtype=float)
-    track["kf"].update_vision(z)
+    update_track_motion(track, cx, cy, t_now)
     track["t_last"] = t_now
     track["missed"] = 0
     track["seen_this_frame"] = True
     track["last_meas"] = (cx, cy)
     track["last_source"] = "vision"
     track["hits"] += 1
+    append_track_trail(track, cx, cy)
 
     x_m, y_m = px_to_m(cx, cy)
     update_raw_theta(track, x_m, y_m, t_now)
@@ -716,7 +712,6 @@ def update_track_with_vision(track, cx, cy, t_now):
 
 
 def get_track_display_pose(track):
-    x_filt_px, y_filt_px, *_ = track["kf"].get()
     label = str(track.get("state_label", ""))
     last_meas = track.get("last_meas")
 
@@ -733,19 +728,23 @@ def get_track_display_pose(track):
         x_draw_m, y_draw_m = px_to_m(x_draw_px, y_draw_px)
         return x_draw_px, y_draw_px, x_draw_m, y_draw_m
 
-    x_draw_m, y_draw_m = px_to_m(x_filt_px, y_filt_px)
-    return float(x_filt_px), float(y_filt_px), x_draw_m, y_draw_m
+    x_px = float(track.get("x_px", 0.0))
+    y_px = float(track.get("y_px", 0.0))
+    x_draw_m, y_draw_m = px_to_m(x_px, y_px)
+    return x_px, y_px, x_draw_m, y_draw_m
 
 
 def update_visit_map_from_tracks(stats, confirmed_tracks, vision_tracks):
     for tr in confirmed_tracks.values():
-        x, y, *_ = tr["kf"].get()
+        x = float(tr.get("x_px", 0.0))
+        y = float(tr.get("y_px", 0.0))
         if point_inside_track(x, y):
             gx, gy = get_cell(x, y)
             stats["visit_map"][gy, gx] += 1
 
     for tr in vision_tracks.values():
-        x, y, *_ = tr["kf"].get()
+        x = float(tr.get("x_px", 0.0))
+        y = float(tr.get("y_px", 0.0))
         if point_inside_track(x, y):
             gx, gy = get_cell(x, y)
             stats["visit_map"][gy, gx] += 1
@@ -846,13 +845,13 @@ try:
                 })
 
 
-        # 1) prever tracks confirmados
+        # 1) preparar tracks confirmados
         for tr in confirmed_tracks.values():
-            predict_track(tr, t)
+            prepare_track_for_frame(tr)
 
-        # 2) prever tracks visuais
+        # 2) preparar tracks visuais
         for tr in vision_tracks.values():
-            predict_track(tr, t)
+            prepare_track_for_frame(tr)
 
         # 3) detetar AprilTags
         tags = detector.detect(gray)
@@ -883,9 +882,14 @@ try:
 
             if tag_id in confirmed_tracks:
                 tr = confirmed_tracks[tag_id]
-                x_pred, y_pred, *_ = tr["kf"].get()
+                last_meas = tr.get("last_meas")
+                if last_meas is not None:
+                    x_ref, y_ref = float(last_meas[0]), float(last_meas[1])
+                else:
+                    x_ref = float(tr.get("x_px", 0.0))
+                    y_ref = float(tr.get("y_px", 0.0))
 
-                if dist2d(x_meas, y_meas, x_pred, y_pred) <= RESET_DIST_PX or tr["missed"] > 0:
+                if dist2d(x_meas, y_meas, x_ref, y_ref) <= RESET_DIST_PX or tr["missed"] > 0:
                     update_track_with_tag(tr, x_meas, y_meas, t)
             else:
                 temp_key, d_attach = find_best_track_for_tag(
@@ -960,15 +964,25 @@ try:
                 too_close = False
 
                 for tr in confirmed_tracks.values():
-                    x_pred, y_pred, *_ = tr["kf"].get()
-                    if dist2d(cx, cy, x_pred, y_pred) < VISION_GATE_BASE_PX:
+                    last_meas = tr.get("last_meas")
+                    if last_meas is not None:
+                        x_ref, y_ref = float(last_meas[0]), float(last_meas[1])
+                    else:
+                        x_ref = float(tr.get("x_px", 0.0))
+                        y_ref = float(tr.get("y_px", 0.0))
+                    if dist2d(cx, cy, x_ref, y_ref) < VISION_GATE_BASE_PX:
                         too_close = True
                         break
 
                 if not too_close:
                     for tr in vision_tracks.values():
-                        x_pred, y_pred, *_ = tr["kf"].get()
-                        if dist2d(cx, cy, x_pred, y_pred) < VISION_GATE_BASE_PX:
+                        last_meas = tr.get("last_meas")
+                        if last_meas is not None:
+                            x_ref, y_ref = float(last_meas[0]), float(last_meas[1])
+                        else:
+                            x_ref = float(tr.get("x_px", 0.0))
+                            y_ref = float(tr.get("y_px", 0.0))
+                        if dist2d(cx, cy, x_ref, y_ref) < VISION_GATE_BASE_PX:
                             too_close = True
                             break
 
@@ -1022,22 +1036,32 @@ try:
         }
 
         for tag_id, tr in confirmed_tracks.items():
-            x, y, vx, vy, ax, ay = tr["kf"].get()
             label = tr["state_label"]
-            x_m_filt, y_m_filt = px_to_m(x, y)
+            x_udp_px = float(tr.get("x_px", 0.0))
+            y_udp_px = float(tr.get("y_px", 0.0))
+            x_m_filt, y_m_filt = px_to_m(x_udp_px, y_udp_px)
+            vx = float(tr.get("vx_px_s", 0.0))
+            vy = float(tr.get("vy_px_s", 0.0))
+            ax = float(tr.get("ax_px_s2", 0.0))
+            ay = float(tr.get("ay_px_s2", 0.0))
             vx_m_s, vy_m_s = vel_px_to_m(vx, vy)
             ax_m_s2, ay_m_s2 = acc_px_to_m(ax, ay)
-            theta_rad_filt, theta_deg_filt, speed_m_s_filt = update_track_theta(tr)
-            x_m = tr["raw_x_m"] if tr.get("raw_x_m") is not None else x_m_filt
-            y_m = tr["raw_y_m"] if tr.get("raw_y_m") is not None else y_m_filt
-            theta_rad = float(tr.get("raw_theta_rad", 0.0))
+            theta_rad_track, theta_deg_track, speed_m_s_track = update_track_theta(tr)
+            last_meas = tr.get("last_meas")
+            if last_meas is not None:
+                x_udp_px = float(last_meas[0])
+                y_udp_px = float(last_meas[1])
+                x_m, y_m = px_to_m(x_udp_px, y_udp_px)
+            else:
+                x_m, y_m = x_m_filt, y_m_filt
+            theta_rad = float(tr.get("raw_theta_rad", theta_rad_track))
             theta_deg = float(np.degrees(theta_rad))
-            speed_m_s = tr.get("raw_speed_m_s", speed_m_s_filt)
+            speed_m_s = tr.get("raw_speed_m_s", speed_m_s_track)
 
             payload["tracks"].append({
                 "id": int(tag_id),
-                "x_px": float(x),
-                "y_px": float(y),
+                "x_px": float(x_udp_px),
+                "y_px": float(y_udp_px),
                 "x_m": x_m,
                 "y_m": y_m,
                 "vx_px_s": float(vx),
@@ -1057,19 +1081,30 @@ try:
             })
 
         for temp_id, tr in vision_tracks.items():
-            x, y, vx, vy, ax, ay = tr["kf"].get()
             label = tr["state_label"]
-            x_m, y_m = px_to_m(x, y)
+            x_udp_px = float(tr.get("x_px", 0.0))
+            y_udp_px = float(tr.get("y_px", 0.0))
+            last_meas = tr.get("last_meas")
+            if last_meas is not None:
+                x_udp_px = float(last_meas[0])
+                y_udp_px = float(last_meas[1])
+                x_m, y_m = px_to_m(x_udp_px, y_udp_px)
+            else:
+                x_m, y_m = px_to_m(x_udp_px, y_udp_px)
+            vx = float(tr.get("vx_px_s", 0.0))
+            vy = float(tr.get("vy_px_s", 0.0))
+            ax = float(tr.get("ax_px_s2", 0.0))
+            ay = float(tr.get("ay_px_s2", 0.0))
             vx_m_s, vy_m_s = vel_px_to_m(vx, vy)
             ax_m_s2, ay_m_s2 = acc_px_to_m(ax, ay)
-            theta_rad_filt, theta_deg_filt, speed_m_s = update_track_theta(tr)
-            theta_rad = float(tr.get("raw_theta_rad", 0.0))
+            theta_rad_track, theta_deg_track, speed_m_s = update_track_theta(tr)
+            theta_rad = float(tr.get("raw_theta_rad", theta_rad_track))
             theta_deg = float(np.degrees(theta_rad))
 
             payload["tracks"].append({
                 "id": int(temp_id),
-                "x_px": float(x),
-                "y_px": float(y),
+                "x_px": float(x_udp_px),
+                "y_px": float(y_udp_px),
                 "x_m": x_m,
                 "y_m": y_m,
                 "vx_px_s": float(vx),
@@ -1145,11 +1180,42 @@ try:
                             1
                         )
 
+            if SHOW_TRACK_TRAIL:
+                for tr in confirmed_tracks.values():
+                    trail = tr.get("trail_px", [])
+                    if len(trail) >= 2:
+                        cv2.polylines(
+                            frame,
+                            [np.array(np.round(trail), dtype=np.int32)],
+                            False,
+                            (80, 255, 80),
+                            2,
+                            cv2.LINE_AA
+                        )
+
+                for tr in vision_tracks.values():
+                    if tr["hits"] < VISION_MIN_HITS_TO_DRAW:
+                        continue
+
+                    trail = tr.get("trail_px", [])
+                    if len(trail) >= 2:
+                        cv2.polylines(
+                            frame,
+                            [np.array(np.round(trail), dtype=np.int32)],
+                            False,
+                            (255, 120, 255),
+                            1,
+                            cv2.LINE_AA
+                        )
+
             for tag_id, tr in confirmed_tracks.items():
-                x, y, vx, vy, ax, ay = tr["kf"].get()
                 label = tr["state_label"]
                 x_draw_px, y_draw_px, x_m, y_m = get_track_display_pose(tr)
                 theta_deg = float(np.degrees(tr.get("raw_theta_rad", 0.0)))
+                vx = float(tr.get("vx_px_s", 0.0))
+                vy = float(tr.get("vy_px_s", 0.0))
+                ax = float(tr.get("ax_px_s2", 0.0))
+                ay = float(tr.get("ay_px_s2", 0.0))
 
                 if label == "MEAS_TAG":
                     color = (0, 255, 0)
@@ -1204,10 +1270,13 @@ try:
                 if tr["hits"] < VISION_MIN_HITS_TO_DRAW:
                     continue
 
-                x, y, vx, vy, ax, ay = tr["kf"].get()
                 label = tr["state_label"]
                 x_draw_px, y_draw_px, x_m, y_m = get_track_display_pose(tr)
                 theta_deg = float(np.degrees(tr.get("raw_theta_rad", 0.0)))
+                vx = float(tr.get("vx_px_s", 0.0))
+                vy = float(tr.get("vy_px_s", 0.0))
+                ax = float(tr.get("ax_px_s2", 0.0))
+                ay = float(tr.get("ay_px_s2", 0.0))
 
                 if label == "TENTATIVE_VISION":
                     color = (255, 0, 255)
@@ -1252,6 +1321,9 @@ try:
 
                 cv2.rectangle(frame, (x, y), (x + w, y + h), blob_color, 2)
                 cv2.circle(frame, (int(cx), int(cy)), 4, blob_color, -1)
+                if src == "yolo":
+                    yolo_radius_px = int(round(YOLO_DRAW_RADIUS_M / PIXEL_TO_METER))
+                    cv2.circle(frame, (int(cx), int(cy)), yolo_radius_px, blob_color, 2)
                 cv2.putText(
                     frame,
                     f"{src.upper()} a={det['area']:.0f}",

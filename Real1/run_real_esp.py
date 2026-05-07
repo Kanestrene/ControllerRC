@@ -26,7 +26,7 @@ ROUND_CORNER_SAMPLES = 10
 # Comandos para a ESP32 via UDP
 # ============================================================
 #ESP32_UDP_IP = "10.80.229.141"
-ESP32_UDP_IP = "10.80.229.146"
+ESP32_UDP_IP = "192.168.137.122"
 ESP32_UDP_PORT = 5005
 
 
@@ -261,12 +261,11 @@ def run_real():
 
     # parâmetros
     dt = 0.02
-    v_ref = 0.47
-    L0 = 0.3
-    kv = 0.4
+    v_ref = 0.38
+    L0 = 0.5
+    kv = 0.0
 
     v_max = 0.47
-    w_max = 2.5
     a_max = 2.0
 
     a_ell, b_ell = 0.03, 0.03
@@ -279,7 +278,7 @@ def run_real():
 
     # Parâmetros bicycle/servo
     L = 0.06                         # entre-eixos (m)
-    delta_max = np.deg2rad(16.5)       # limite do servo
+    delta_max = np.deg2rad(30)     # limite do servo
     delta_rate_max = np.deg2rad(300) # rad/s
     kappa_max = np.tan(delta_max) / L
 
@@ -299,38 +298,39 @@ def run_real():
             # ler estado REAL
             x, y, yaw, v = get_robot_state()
 
-            # nominal simples
-            v_nom = v_ref
-            w_nom = 0.0         
-            
+            # pure pursuit
+            Ld = L0 + kv * abs(v)
+            state = (x, y, yaw, v)
+
+            v_cmd, w_cmd, target_idx, last_near, cte = pure_pursuit_control(
+                px, py, state,
+                last_near_idx=last_near,
+                Ld=Ld,
+                v_ref=v_ref
+            )
+
+            v_cmd = np.clip(v_cmd, -v_max, v_max)
+            w_max = abs(v_cmd) * kappa_max
+            w_cmd = np.clip(w_cmd, -w_max, w_max)
+
             # limitar aceleração
             #dv = np.clip(v_cmd - v, -a_max * dt, a_max * dt)
             #v_cmd = v + dv
 
-            
-            # CBF + CLF (Lyapunov), igual ao Pack2
-            (u_safe, clf_info) = qp.cbf_clf_qp_filter(
-                u_nom=(v_nom, w_nom),
+            # CBF
+            v_safe, w_safe = qp.cbf_qp_filter(
+                u_nom=(v_cmd, w_cmd),
                 robot_state=(x, y, yaw),
                 obstacles=obstacles,
-                px=px, py=py, pyaw=pyaw, s=s,
-                last_path_idx=last_near,
                 ellipse_ab=(a_ell, b_ell),
                 margin=margin,
                 lookahead_l=0.1,
                 alpha=2.5,
-                eps_clf=10,
-                q_clf=(1.0, 10.0, 0.01),
-                W=(25000.0, 1.0),
-                p_slack=1.0,
-                v_ref=v_ref,
+                W=(250.0, 1.0),
                 v_bounds=(0.0, 2.0),
-                kappa_max=kappa_max,
+                w_bounds=(-w_max, w_max),
             )
 
-            v_safe, w_safe = u_safe
-            last_near = clf_info["idx"]
-            cte = clf_info["ey"]
             v_safe = np.clip(v_safe, -v_max, v_max)
 
             kappa_max = np.tan(delta_max) / L
@@ -338,7 +338,6 @@ def run_real():
             w_safe = np.clip(w_safe, -w_max_speed, w_max_speed)
 
             delta_cmd = omega_to_delta(w_safe, v_safe, L, v_min=0.2)
-            delta_cmd_unclipped = delta_cmd
             delta_cmd = np.clip(delta_cmd, -delta_max, delta_max)
 
             # limita taxa do servo
@@ -346,16 +345,14 @@ def run_real():
             delta = delta_cmd
 
             # enviar para a ESP32
-            esp32_msg = esp32.send_cmd(v=v_safe, delta=delta)
-            #esp32_msg = esp32.send_cmd(v=0.47, delta=0.2)
+            esp32_msg = esp32.send_cmd(v=v_safe, delta=10*delta)
             
             # debug
             print(
                 f"estado: x={x:.3f} m, y={y:.3f} m, yaw={yaw:.3f} rad, v={v:.3f} m/s | "
-                f"ref: idx={clf_info['idx']} psi_r={clf_info['psi_r']:.3f} ey={clf_info['ey']:.3f} "
-                f"epsi={clf_info['epsi']:.3f} V={clf_info['V']:.3f} | "
-                f"cmd: v={v_safe:.2f} m/s, w={w_safe:.3f} rad/s, delta_raw={delta_cmd_unclipped:.3f} rad, "
-                f"delta={delta:.3f} rad, cte={cte:.3f} | udp='{esp32_msg}'"
+                f"pp: target_idx={target_idx} Ld={Ld:.3f} | "
+                f"cmd: v={v_safe:.2f} m/s, w={w_safe:.3f} rad/s, delta={delta:.3f} rad, "
+                f"cte={cte:.3f} | udp='{esp32_msg}'"
             )
 
             # manter frequência
