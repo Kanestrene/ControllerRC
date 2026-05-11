@@ -74,7 +74,7 @@ def clf_row_path_tracking(px, py, pyaw, s, robot_state,
                           v_ref=1.0,
                           qx=1.0, qy=1.0, qpsi=4.0,
                           eps=1.0,
-                          lookahead_l=0.4):
+                          lookahead_l=0.5):
     x, y, theta = robot_state
     l = lookahead_l
 
@@ -84,7 +84,7 @@ def clf_row_path_tracking(px, py, pyaw, s, robot_state,
 
     # projeta a posicao real no caminho e avanca l metros ao longo dele
     idx_proj, _ = nearest_path_point_closed(px, py, x, y, last_idx=last_idx)
-    idx = advance_path_index_closed(s, idx_proj, l - 0.25)
+    idx = advance_path_index_closed(s, idx_proj, l - 0.3)
 
     xr = px[idx]
     yr = py[idx]

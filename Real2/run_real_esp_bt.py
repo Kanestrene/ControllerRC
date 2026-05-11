@@ -299,7 +299,7 @@ async def run_real():
 
     # parâmetros
     dt = 0.02
-    v_ref = 0.3
+    v_ref = 0.35
 
     v_max = 0.47
     a_max = 2.0
@@ -348,7 +348,7 @@ async def run_real():
                 lookahead_l=0.1,
                 alpha=2.5,
                 eps_clf=10,
-                q_clf=(0.01, 6.0, 0.01),
+                q_clf=(0.01, 10.0, 0.01),
                 W=(2500000.0, 1.0),
                 p_slack=1000.0,
                 v_ref=v_ref,
@@ -370,7 +370,7 @@ async def run_real():
             delta_cmd = np.clip(delta_cmd, -delta_max, delta_max)
 
             # Se quiseres suavizar servo, troca para:
-            # delta = rate_limit(delta_cmd, delta, du_max=delta_rate_max * dt)
+            #delta = rate_limit(delta_cmd, delta, du_max=delta_rate_max * dt)
             delta = delta_cmd
 
             if 0.0 < delta < 0.05:
