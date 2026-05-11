@@ -299,7 +299,7 @@ async def run_real():
 
     # parâmetros
     dt = 0.02
-    v_ref = 0.2
+    v_ref = 0.3
 
     v_max = 0.47
     a_max = 2.0
@@ -314,7 +314,7 @@ async def run_real():
 
     # Parâmetros bicycle/servo
     L = 0.06
-    delta_max = np.deg2rad(20)
+    delta_max = np.deg2rad(13)
     delta_rate_max = np.deg2rad(300)
     kappa_max = np.tan(delta_max) / L
 
@@ -348,9 +348,9 @@ async def run_real():
                 lookahead_l=0.1,
                 alpha=2.5,
                 eps_clf=10,
-                q_clf=(1.0, 10.0, 0.01),
-                W=(250000.0, 1.0),
-                p_slack=100.0,
+                q_clf=(0.01, 6.0, 0.01),
+                W=(2500000.0, 1.0),
+                p_slack=1000.0,
                 v_ref=v_ref,
                 v_bounds=(0.0, 2.0),
                 kappa_max=kappa_max,
@@ -384,7 +384,8 @@ async def run_real():
             else:
                 delta_send = delta
 
-            esp32_msg = await esp32.send_cmd(v=v_safe, delta=2*delta_send)
+            esp32_msg = await esp32.send_cmd(v=v_safe, delta=delta)
+            #esp32_msg = await esp32.send_cmd(v=0.0, delta=0.3)
 
             print(
                 f"estado: x={x:.3f} m, y={y:.3f} m, yaw={yaw:.3f} rad, "

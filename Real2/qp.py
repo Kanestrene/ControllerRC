@@ -1,7 +1,7 @@
 import numpy as np
 from qpsolvers import solve_qp
 import cbf 
-import clf
+import clf2
 
 
 def cbf_qp_filter(u_nom, robot_state, obstacles,
@@ -163,7 +163,7 @@ def cbf_clf_qp_filter(
     # ----------------------------------
     # CLF
     # ----------------------------------
-    G_clf, h_clf, clf_info = clf.clf_row_path_tracking(
+    G_clf, h_clf, clf_info = clf2.clf_row_path_tracking(
         px, py, pyaw, s,
         robot_state=(x, y, th),
         last_idx=last_path_idx,
