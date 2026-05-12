@@ -338,7 +338,7 @@ def simulate():
             margin=margin,
             lookahead_l=0.1,
             alpha=5,
-            eps_clf=3,
+            eps_clf=1,
             q_clf=(1.0, 10.0, 0.01),
             W=(100000.0, 1.0),
             p_slack=50.0,

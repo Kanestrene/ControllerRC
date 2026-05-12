@@ -1,0 +1,176 @@
+5.1 Learning CBF Parameters for Feasibility 61
+Note that we can update the training set and get a new classiﬁer in ( 5.8) after running the
+FGO algorithm for a number of different initial samples p0, q0, i.e., re-initialize ( 5.9) for
+each FGO process. Once we have learned feasibility and robustness for some known types
+of unsafe sets with the FGO algorithm, we can use these unsafe sets to approximate other
+types of unsafe sets.
+Remark 5.1 (Time complexities of subproblems SP1 and SP2). The time complexity of
+SP1, i.e., the QP ( 5.3), is O(d
+3),w h e r ed = q + 1 is the dimension of decision variables.
+Since the CBF method (after pre-training) does not need planning, it is more computationally
+efﬁcient than path planning methods, such as Rapidly-exploring Randomized Trees (RRT)
+[29] and A* [ 22]. On the other hand, the time complexity of SP2 is that of a LP [ 66],
+i.e., O((d + c)
+1.5dL ), where d, c are the numbers of decision variables and constraints,
+respectively, and L is a given parameter. Thus, the complexity of the FGO algorithm is
+almost the same as the GD one, as it just has one more constraint than the GD method,
+hence the computational times are comparable.
+5.1.5 Robot Control Using Feasibility-Guided Optimization
+In this section, we apply the FGO algorithm to a robot control problem in a MA TLAB
+setting and show several simulations results. The robot moves is an environment with several
+obstacles of the same type, but the number of obstacles and their locations are unknown to
+the robot. The robot is equipped with a sensor (
+2
+3π ﬁeld of view (FOV) and 7 m sensing
+distance with 1 m uncertainty) to detect the obstacles.
+Deﬁning x := (x, y,θ,v) , u := (u1, u2), the dynamics are:
+˙x = v cos(θ), ˙y = v sin(θ),
+˙θ = u1, ˙v = u2,
+(5.13)
+where x, y denote the location along the x, y axis, respectively,θ denotes the heading angle
+of the robot, v denotes the linear speed, and u1, u2 denote the two control inputs for turning
+and acceleration, respectively.
+The objective is deﬁned to be:
+min
+u(t)
+ t f
+0
+
+u2
+1(t) + u2
+2(t)
+
+dt + p0((x(t f ) − xd)2 + (y(t f ) − yd)2). (5.14)
+In other words, we wish to minimize the energy consumption and drive the robot to a given
+destination (xd, yd) ∈ R2, i.e., drive (x(t), y(t)) to (xd, yd), ∀t ∈[ t	, t f ], for some t	 ∈
+[0, t f ]. The robot dynamics are not full-state linearizable [ 26] and the relative degree of
+the position (output) is 2. Therefore, we cannot directly apply a CLF. However, the robot
+
+62 5 Feasibility for CBF-Based Optimal Control Using Machine Learning
+can arrive at the destination if its heading angle θ stabilizes to the desired direction and its
+speed v stabilizes to a desired speed v0 > 0, i.e.,
+θ( t) → arctan( yd − y(t)
+xd − x(t)), v( t) → v0, ∀t ∈[ 0, t f ]. (5.15)
+Now, we can apply the CLF method since the relative degrees of the heading angle and
+speed are 1.
+The unsafe sets ( 5.1) are deﬁned as circular (regular) obstacles:
+
+(x(t) − xi)2 + (y(t) − yi)2 ≥ r, ∀i ∈ S, (5.16)
+where (xi, yi) denotes the location of the obstacle i ∈ S,a n dr > 0 denotes the safe distance
+to the obstacle.
+The speed and control constraints ( 2.19) are deﬁned as:
+Vmin ≤ v(t) ≤ Vmax , (5.17)
+u1,min ≤ u1(t) ≤ u1,max , u2,min ≤ u2(t) ≤ u2,max , (5.18)
+where Vmin = 0m /s, Vmax = 2m /s, u1,max =− u1,min = 0.2r a d/s, u2,max =− u2,min =
+0.5m /s2. Other parameters are p0 = 1, t = 0.1s , = 10.
+We set up the FGO algorithm training environment with the initial position of the robot,
+the location of an obstacle (with radius 6 m and r = 7 m) and the destination as (5 , 25 m),
+(32, 25 m) and (45 m,( 25 + ε)m), respectively, where ε ∈ R. The initial heading angle and
+speed of the robot are 0 ◦ and Vmax , respectively. The parameters for the FGO algorithm
+are t = 0.1, νmax =− νmin = (0.1, 0.1, 0.1, 0.1). The map for FGO training is shown in
+Fig. 5.3a.
+Note that the value of ε will affect the trajectory of the robot since we have a circular
+obstacle. If ε = 0, the robot will eventually stop at the equilibrium point shown in Fig. 5.3a.
+If ε> 0, the robot goes left around the obstacle as shown in Fig. 5.3a. Otherwise, the robot
+turns right.
+We choose a very small ε = 0 in the FGO algorithm. Since the obstacle constraint
+(5.16) has relative degree 2 with respect to the dynamics, the HOCBF parameters are
+p = ( p1, p2), q = (q1, q2). We collect balanced data sets (the ratio of the samplings between
++1a n d −1 labelled data is 1:1 for both training and testing sets) from the random sam-
+plings of M training and 1000 testing samples for p and q over interval (0, 3] and (0, 2],
+respectively. Note that we allow q to be sampled in (0, 1) as the robot will not get too close
+to the circular obstacles, although the class K function piψqi
+i−1(x) in (5.4) is not Lipschitz
+continuous when ψi−1(x) = 0.
+The classiﬁcation model is a support vector machine (SVM) with polynomial kernel of
+degree 7, i.e., the kernel function k( y, z) is deﬁned as
+
+5.1 Learning CBF Parameters for Feasibility 63
+Table 5.1 Comparisons between the GD and FGO algorithms
+Items GD FGO
+Training
+sample number
+M
+500 1000 1500 2000 2500 3000 3500 4000
+Classiﬁcation
+accuracy
+0.879 0.927 0.939 0.953 0.960 0.963 0.966 0.970
+Better than GD
+percentage
+0.210 0.248 0.254 0.252 0.244 0.282 0.288 0.266
+Worse than GD
+percentage
+0.270 0.190 0.232 0.204 0.218 0.218 0.240 0.240
+Dmin /m
+(samples min.:
+5.0)
+4.6 4.6 4.6 4.6 4.8 4.6 4.6 4.6 4.6
+k( y, z) = (c1 + c2 yT z)7, (5.19)
+where y, z denote input vectors for the SVM (i.e., y := ( p, q),a n d z becomes a constant
+vector of the same dimension as y after training). We set c1 = 0.8, c2 = 0.5, and the com-
+parisons between FGO and GD are shown in Table 5.1 (“better/worse than GD percentage”
+denotes the percentage of data in the testing set that the FGO obtains a better objective value
+(5.2) of subproblem (ii ) than the GD method).
+The FGO has better performance compared with GD in ﬁnding
+Dmin when the number
+of training samples M for the hypersurface ( 5.10) is large enough, as shown in Table 5.1.
+FGO and GD have almost the same computational cost, i.e., < 0.01s for both. But this
+advantage decreases when the classiﬁcation accuracy of the hypersurface ( 5.10)f u r t h e r
+increases, which may be due to over-ﬁtting. One comparison example between FGO and
+GD search paths is shown in Fig. 5.2a, b. Note that we can combine them to get improved
+capability to search for p
+∗, q∗. If we apply the FGO method to the good results from GD,
+the additional improvement percentage is around 5% among all the testing samples.
+We have implemented the learned optimal HOCBF parameters ( p∗
+1, p∗
+2, q∗
+1 , q∗
+2 ) =
+(0.7426, 1.9745, 1.9148, 0.7024) in the deﬁnition of all the HOCBFs for all obstacles in a
+robot exploration problem in an unknown environment. We should also note that the opti-
+mal penalties and powers are not unique. All the circular obstacles are with different size
+to test the robustness of the penalty method with the learned optimal parameters, and are
+static but randomly distributed. The robot can safely avoid all the obstacles and arrive at its
+destination if the obstacles do not form traps such that the robot has no way to escape, as
+s h o w ni nF i g .5.3b.
+We also compared the CBF-based robot exploration framework with the RRT [ 29]a n d
+A* [22] algorithms by considering the conﬁguration shown in Fig.5.3b. The pre-training for
+
+64 5 Feasibility for CBF-Based Optimal Control Using Machine Learning
+(b) FGO and GD algorithm search paths in 3D.
+(a) FGO and GD algorithm search paths in 2D.
+Fig. 5.2 FGO and GD comparison. The red and green circles denote infeasible and feasible points
+for p, q in the training samples, respectively
+the CBF-based method could be several hours. Both the RRT and A* algorithms have global
+environment information such that they tend to choose shorter-length trajectories compared
+with the CBF method. But this advantage disappears if the environment is changing fast, in
+which case the CBF method tends to be more robust and computationally efﬁcient. Com-
+parisons based on four different criteria are shown in Table 5.2. In a dynamic environment,
+the RRT and A* algorithms need to re-plan their path at each time step, whereas the CBF
+method does not need to do this. Therefore, we can see that the CBF-based framework is
+able to better adjust to changes in the environment and is computationally efﬁcient.
+
+5.2 Learning Feasibility Constraints 65
+(a) FGO pre-training map with feasible
+example trajectories.
+(b) Comparison of robot paths between CBF,
+A* and RRT.
+Fig. 5.3 Case study setup and comparison of different planning frameworks
+Table 5.2 Performance comparison between CBF, A* and RRT
+Item R.T. compute
+time (s)
+Safety guarantee Environment
+knowledge
+Pre-training
+CBF <0.01 Ye s Not required Required
+A* 1.3 No Required Not required
+RRT 0.3 No Required Not required
+5.2 Learning Feasibility Constraints
+In this section, we show how we can deal with irregular unsafe sets (deﬁned below). This
+approach also works for regular unsafe sets, but tends to be conservative [ 87]. Recall that
+in the unknown environments we consider, the type of every unsafe set i ∈ S that might
+be present is already known, and St denotes an index set for unsafe set types, while S j ⊆
+S, j ∈ St denotes the index set for unsafe sets of type j.
+5.2.1 Regular and Irregular Unsafe Sets
+Depending on how the system initial state can affect the feasibility of the CBF-based QPs,
+we classify unsafe sets into two classes:
