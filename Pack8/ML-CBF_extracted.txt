@@ -1,0 +1,396 @@
+5Feasibility for CBF-Based Optimal Control Using
+Machine Learning
+5.1 Learning CBF Parameters for Feasibility
+A HOCBF constraint is active when a control makes it an equality at a given state. An
+example of how a HOCBF constraint is activated is shown in Fig. 5.1. The activation of the
+HOCBF will change the system trajectory in order to ensure that the system remains safe.
+A ss h o w ni nF i g .5.1, the precise time when a HOCBF is activated depends on how this
+HOCBF is designed.
+In what follows, we consider multiple safety constraints instead of a single one as in
+(2.18). Let S denote an index set for unsafe (state) sets. System ( 2.11) avoids each unsafe
+set j ∈ S if its state satisﬁes:
+b
+j(x(t)) ≥ 0, ∀t ∈[ 0, T], ∀ j ∈ S, (5.1)
+where b j : Rn → R is a continuously differentiable function (not a CBF or HOCBF yet).
+Let St denote the set indexing all the unsafe set types.We deﬁne unsafe sets as being of the
+same “type” if they have the same geometry, meaning the conditions for problem feasibility
+are the same, e.g., circular unsafe sets are the same type if they have the same radius but
+different locations.
+In the parameter learning approach we develop here, we parameterize the deﬁnition of a
+HOCBF (i.e., the class
+K functions in Deﬁnition 3.3) for each type of unsafe set, and aim
+to recursively improve a “feasibility robustness” metric introduced next.
+5.1.1 Feasibility Robustness
+If the HOCBF constraint corresponding to (5.1) never becomes active, then safety is guaran-
+teed even without the use of a HOCBF. In this case, the solution space of the QP OCP-CBF
+© The Author(s), under exclusive license to Springer Nature Switzerland AG 2023
+W. Xiao et al., Safe Autonomy with Control Barrier Functions ,
+Synthesis Lectures on Computer Science,
+https://doi.org/10.1007/978-3-031-27576-0_5
+53
+
+54 5 Feasibility for CBF-Based Optimal Control Using Machine Learning
+Robot 
+trajectories
+Initial position
+Destination
+Obstacle
+Activation zones 
+for red and blue trajectories
+))
+))
+The CBF constraint is first active at time 
+Blue trajectory is unconstrained in this 
+interval (i.e., free action space)
+Fig. 5.1 Illustration of feasibility robustness quantiﬁcation: CBF constraint activation zones depend
+on the dimension of the state space as state-feedback is used, but are only visualized in the x − y 2D
+space. The CBF (HOCBF) constraint ( 3.8) ﬁrst becomes active at time ta
+j when an agent (e.g., robot)
+approaches the obstacle. The CBF in the blue trajectory is active later than the one in red, thus, the
+robot has more freedom to move before ta
+j and it does not necessarily get close to the obstacle as
+shown in the ﬁgure. When b j(x(ta
+j )) is minimized, the activation zone of the HOCBF is minimized,
+therefore, the feasibility robustness (future action space) is maximized
+(2.20) is clearly at its maximum. Therefore, we only consider the case where the HOCBF
+constraint becomes active. Letta
+j ∈[ 0, t f ] denote the time instant that the HOCBF constraint
+(3.8), corresponding to (5.1), ﬁrst becomes active and (possibly) remains active afterwards if
+the state of system (2.11) keeps getting closer to the unsafe set. After the HOCBF constraint
+in the QP OCP-CBF (2.20) becomes active, the solution space of the QP is limited by the
+activated constraints, thus, the action space of the system is constrained. As an example,
+the HOCBF constraint along the red trajectory in Fig. 5.1 is active earlier than the blue one,
+therefore, the robot cannot move freely after the CBF constraint becomes active. As the
+solution approach of the CBF method is pointwise and myopic, our goal is to maximize
+the future action space of the system at each time step, i.e., to minimize the activation zone
+o b s e r v e di nF i g .5.1. This is equivalent to the feasibility robustness concept we introduce
+here.
+The feasibility robustness of a controller with respect to a constraint (5.1) can be quantiﬁed
+by the value of b
+j(x(ta
+j )). The value of b j(x(ta
+j )) may denote a distance metric to a (type of)
+unsafe set j ∈ St (see the example shown in Fig. 5.1). In order to maximize the feasibility
+robustness (equivalently, the future action space, i.e., the future feasible control set a system
+can select from), we need to minimize the HOCBF value at t
+a
+j :
+min
+ta
+j
+b j(x(ta
+j )), j ∈ St. (5.2)
+The minimization of the above objective is equivalent to minimizing the activation zone
+of the HOCBF, hence, the feasibility robustness (or future action space) is maximized, as
+illustrated in Fig. 5.1.
+
+5.1 Learning CBF Parameters for Feasibility 55
+There are three main advantages in maximizing the feasibility robustness of the controller:
+1. The QPs are more likely to be feasible since fewer constraints will become active when
+a system gets close to a number of unsafe sets.
+2. In an unknown environment, the controller obtained through the QPs is more robust
+to changes in the environment and the detection of unknown unsafe sets, since the
+corresponding HOCBF constraints only become active when a system gets close to
+these unsafe sets. If the corresponding HOCBF constraints become active before the
+unsafe sets are detected, the system may fail to avoid these unsafe sets.
+3. There is a higher probability to ﬁnd a better solution (e.g., energy optimal) if the feasibility
+robustness is maximized, since the QPs are less constrained. Note that proximity to an
+unsafe set can increase the chance of the state entering it in the presence of disturbances.
+However, the maximization of feasibility robustness does not mean that the system state
+has to get close to the unsafe sets, and this performance depends on how we design the
+CLF which enforces the state convergence in ( 2.17).
+The robustness objective ( 5.2) depends on the time t
+a
+j ,w h e r eta
+j is determined once a
+HOCBF in the above problem is deﬁned. Therefore, we need to consider objective ( 5.2)i n
+how a HOCBF is designed. This approach requires a parameterization of a HOCBF so that
+we can optimize the parameter values in solving ( 5.2). We tackle this problem through a
+learning process whose objective is to maximize the feasibility robustness of the controller
+with respect to unknown unsafe sets as the QP-based approach for constrained optimal
+control problems is myopic due to the fact that the QP is solved one single time step forward.
+We proceed by decomposing OCP into two sub-problems:
+• SP1: Optimize (2.17) which is solved with the QP-based method ( 2.21).
+• SP2: Minimize the objective ( 5.2) after solving SP1.
+We describe both sub-problems next, starting with SP1.
+5.1.2 Online HOCBF and CLF-Based QP (SP1)
+Sub-problem SP1 is actually the same as the QP approach ( 2.21), which we re-write
+below for convenience replacing the CBF constraint by the more general HOCBF con-
+straint. Thus, after partitioning the time interval [0, T] into a set of equal time inter-
+vals {[0, t), [t, 2t) ,... },w h e r et > 0, we solve for the constant control u(ωt)
+(i.e., the overall control will be piece-wise constant) at each interval [ωt,( ω+ 1)t)
+(ω = 0, 1, 2,... ):
+
+56 5 Feasibility for CBF-Based Optimal Control Using Machine Learning
+min
+u(ωt),δr (ωt)
+C(||u(ωt)||) + ptδ2
+r (ωt)
+s.t. Lm
+f b j(x) +[ Lg Lm−1
+f b j(x)]u+ O(b j(x)) + αm(ψm−1(x)) ≥ 0, ∀ j ∈ S
+L f V(x) + Lg V(x)u + V(x) ≤ δr
+umin ≤ u ≤ umax
+(5.3)
+As we know by now, this optimization problem can easily become infeasible. In the sequel,
+we show how we can use machine learning techniques to address this issue by maximizing
+the feasibility robustness through ( 5.2).
+5.1.3 The Parameterization Method
+The approach we follow here is similar to that of Sect. 4.1 where we modiﬁed the class K
+functions in a HOCBF through a multiplicative penalty parameter. Here, however, in order
+to recursively improve the feasibility of the QP ( 5.3), we parameterize the actual family
+of class K functions α1(·), α2(·), . . . , αm(·) (see also [ 72]), where m denotes the relative
+degree of the constraint b(x) ≥ 0 in the deﬁnition of a HOCBF b(x). Let ψ0(x) := b(x).
+Since power functions are the most frequently used class K functions, we select the αi(·)
+functions in ( 3.3) as follows:
+ψi(x) := ˙ψi−1(x) + piψqi
+i−1(x), i ∈{ 1,..., m} (5.4)
+where pi > 0, i ∈{ 1,..., m} and qi ≥ 1, i ∈{ 1,..., m}. Then, we can obtain the HOCBF
+constraint (3.8) when combining it with dynamics ( 2.11), as shown in Deﬁnition 3.3.
+Recall that St denotes the set that indexes all the unsafe set types. For each type of
+unsafe set j ∈ St , we consider an arbitrary location for it and obtain an unsafe set constraint
+b j(x(t)) ≥ 0 ,s i m i l a rt o(5.1). Let p := ( p1,..., pm), q := (q1,..., qm). We know from
+[72] that the values of p, q affect the feasible set for the decision variables of ( 5.3), as well
+as what time ta
+j the HOCBF constraint ( 3.8) will be active, i.e., we can rewrite b j(x(ta
+j ))
+as b j(x(ta
+j )) p,q .S i n c eta
+j depends on p, q and b j(·) no longer explicitly depends on x(ta
+j )
+(i.e., b j(x(ta
+j )) p,q is ﬁxed once p, q are given), we deﬁne
+D j( p, q) := b j(x(ta
+j )) p,q (5.5)
+and reformulate ( 5.2) so that the minimization is over the parameter vectors p, q:
+minp,q D j( p, q), j ∈ St. (5.6)
+We can, therefore, view the minimization of D j( p, q) as the maximization of the feasibility
+robustness that depends on p, q. However, this optimization problem is hard to solve as ta
+j
+corresponds to a particular trajectory resulting from a sequence of QPs from the initial time
+
+5.1 Learning CBF Parameters for Feasibility 57
+to the ﬁnal time. We will introduce a solution approach using machine learning techniques
+in the following section.
+5.1.4 Offline Feasibility-Guided Optimization (SP2)
+Note that subproblem SP2 depends on subproblem SP1, while the feasibility ofSP2 depends
+on the control bounds ( 2.19). Given an arbitrary x(0), one can generally expect most of the
+p, q values to result into infeasible solutions of problem ( 5.3), which makes ( 5.6) difﬁcult
+to solve. Therefore, we need to ﬁrst resolve the infeasibility problem of sub-problem SP1.
+We proceed by randomly sampling p, q values over their domain (positive), and for each
+set of p, q values, we solve problem (5.3) until the terminal state constraint is satisﬁed within
+some allowed error. If problem ( 5.3) is feasible at all times, then we label this particular set
+of p, q values as +1, otherwise, we label it as −1. In this way, we eventually obtain sets
+of feasible and infeasible p, q points. Note that the penalty method described previously
+guarantees that +1 data points exist given the control bounds ( 2.19) if certain conditions
+are satisﬁed. We assume that the control bounds ( 2.19) are properly deﬁned such that we
+can select balanced data sets for better classiﬁcation, e.g., the same number of feasible and
+infeasible samplings with a large enough data size, from the randomly sampled data. Then,
+we can apply a standard classiﬁcation method, e.g., a support vector machine (SVM) [ 10],
+to classify these two balanced sets and get a continuously differentiable hypersurface
+H
+j : R2m → R, (5.7)
+where
+H j( p, q) ≥ 0 (5.8)
+denotes the set of p, q values which leads to the feasible solution of QPs (5.3), i.e., it deﬁnes
+the feasibility constraint for the set of p, q values associated with the QPs ( 5.3). With the
+assistance of the feasiblity classiﬁcation hypersurface, we look further to optimize ( 5.6),
+i.e., we consider ( 5.6) subject to ( 5.8).
+Our goal is to get the set of p, q values such that ( 5.8) is satisﬁed. However, ( 5.8)i s
+usually complex as it is directly obtained from the classiﬁer hypersurface. Therefore, we
+view H
+j( p, q) ≥ 0 as a constraint applied to a dynamic system with statesp, q and formulate
+an associated HOCBF. In particular, just like b(x) is associated with the dynamic system
+(2.11), we need to introduce an auxiliary dynamic system for H j( p, q) and take p, q as state
+variables, as shown in the sequel.
+We have imposed the assumption that the control bounds (2.19) are properly deﬁned such
+that the whole problem is well-posed to get a proper constraint ( 5.8) from the hypersurface.
+However, the learned hypersurface is still complex, even with the HOCBF method, and this
+makes the optimization problem ( 5.6) subject to ( 5.8) hard to solve. We use the following
+dynamic process to simplify this optimization problem.
+
+58 5 Feasibility for CBF-Based Optimal Control Using Machine Learning
+We start at some feasible p0 ∈ Rm, q0 ∈ Rm to search for the optimal p, q values. Since
+the determination of the optimal p, q is a dynamic process, we deﬁne the gradient (auxiliary
+dynamics) for p, q as controllable variations of p, q through the dynamic system
+( ˙p(t), ˙q(t)) = ν(t),
+s.t. H j( p, q) ≥ 0,
+p(t0) = p0, q(t0) = q0,
+(5.9)
+where ν ∈ R2m denotes an input vector in the dynamic process constructed in order to deter-
+mine the optimal p, q.T h ev a r i a b l et denotes the dynamic process time for the optimization
+of (5.6), which is different and independent from t in (2.11) and problem ( 5.3), and t0 ∈ R
+denotes the initial time.
+Now viewing (5.8) as a state constraint analogous to b j(x) ≥ 0i n( 5.1), we seek to treat
+it as a HOCBF. Considering the feasibility of problem ( 5.3), the dynamic process that is
+controlled by ν should be subjected to ( 5.9), as well as to the HOCBF constraint for ( 5.8)
+since we deﬁne the hypersurface in ( 5.8)t ob eaH O C B F ,a sd i s c u s s e di nt h el a s tt h r e e
+paragraphs. Since we take all the state variables of the auxiliary dynamics ( 5.9) as the input
+for the classiﬁer, the relative degree of the feasibility constraint ( 5.8) with respect to (5.9)i s
+1, i.e., we only need to differentiate H j( p, q) along the dynamics ( 5.9)o n c et ol e tν show
+up. A control ν should satisfy the HOCBF constraint ( 3.8) which in this case is
+dH j( p, q)
+d( p, q) ν + β1(H j( p, q)) ≥ 0, (5.10)
+where β1(·) is an extended class K function as H j( p, q) could be negative due to possi-
+ble classiﬁcation errors. Any control ν that satisﬁes ( 5.10) implies that the resulting p, q
+(determined by ν) leads to a feasible solution of QPs ( 5.3) in the dynamic process.
+We enforce the feasibility constraint ( 5.8) by the HOCBF constraint ( 5.10) in which the
+control ν explicitly shows. However, the cost function (5.6) is only deﬁned over the state of
+the auxiliary dynamics (5.9), and we also wish the control ν to show up in the cost function,
+which is required by the CBF-based optimization, as shown in Sect. 5.1.2. Therefore, we
+consider the derivative of the cost function ( 5.6)a so u rn e wc o s tt ol e tν show up in the cost
+function. Recall that (5.6) is the robustness metric that we wish to minimize. As long as the
+derivative of ( 5.6) is negative, we can ensure that ( 5.6) is decreasing at each time step by
+discretizing t similar to sub-problem SP1. To modify (5.6), we proceed as follows.
+By taking the derivative of ( 5.6) with respect to t,w eh a v e
+dD j( p(t), q(t))
+dt = dD j( p(t), q(t))
+d( p(t), q(t)) ν. (5.11)
+Then, we reformulate sub-problem SP1 through the dynamic process ( 5.9). The result is
+the Feasibility-Guided Optimization (FGO) algorithm that is implemented by the same
+
+5.1 Learning CBF Parameters for Feasibility 59
+approach as introduced in Sect. 5.1.2, i.e., we discretize t, and at each t = ωt,ω ∈
+{0, 1,... },w h e r et > 0 denotes the discretization constant, we solve
+min
+ν(t)
+dD j( p(t), q(t))
+d( p(t), q(t)) ν(t),
+s.t. dH j( p, q)
+d( p, q) ν + β1(H j( p, q)) ≥ 0,
+νmin ≤ ν ≤ νmax .
+(5.12)
+where νmin < 0, νmax > 0 (componentwise), 0 ∈ R2m . Then, we update ( 5.9)f o r t ∈
+(ωt,( ω+ 1)t) with ν∗(t). The optimization problem ( 5.12) is a linear program (LP)
+at each time step for each initial p, q (we need to reset t for each set of initial p, q val-
+ues). Without any constraint on ν, the LP ( 5.12) is ill-posed because it leads to unbounded
+solutions. In fact, the value of ν determines the search step length of the FGO algorithm
+implemented through the LP ( 5.12), and we want to limit this step length. Therefore, we
+add limitations to ν in the LP ( 5.12). Note that in the last equation, dD j ( p(t),q(t))
+d( p(t),q(t)) is a row
+vector of dimension 2 m, while ν is a column vector of dimension 2 m. Therefore, the cost
+function in the last equation is a scalar function of ν.
+After adding limitations to ν in ( 5.12), the dynamic process’s search step length will
+become bounded. Although there are control limitations on ν, the resulting LP from the
+optimization (5.12) is always feasible as the relative degree of (5.8) with respect to (5.9)i s1
+[71]. We also need to evaluate ∂D j
+∂ p1 ,..., ∂D j
+∂ pm ,∂D j
+∂q1 ,..., ∂D j
+∂qm at each time step, i.e., evaluate
+the coefﬁcients of the cost function ( 5.12).
+The resulting process is the FGO algorithm formulated from ( 5.12) to optimize p, q.F o r
+each step of the FGO algorithm, any one of the following four conditions may terminate it:
+(a) the problem (5.3) becomes infeasible (since the hypersurface from the classiﬁer cannot
+ensure 100% accuracy), (b) the computed values of
+∂D j
+∂ p1 ,..., ∂D j
+∂ pm ,∂D j
+∂q1 ,..., ∂D j
+∂qm are all 0,
+(c) the objective function value of (5.6) is greater than the current known minimum value.(d)
+the iteration time exceeds some N ∈ N. We present the FGO algorithm in Algorithm 1.W e
+note that this approach is more computationally efﬁcient than one that directly incorporates
+the barrier function in the cost, as Algorithm 1 only involves QPs.
+If we consider (5.12) without constraint (5.10), then we have the commonly used gradient
+descent (GD) algorithm. The FGO algorithm is more efﬁcient compared with GD since the
+solution searching path is guided by the feasibility of ( 5.3). However, the hypersurface in
+(5.8) cannot guarantee the correctness of the FGO method due to possible classiﬁcation
+errors. We can apply GD one step forward whenever the FGO algorithm terminates to
+alleviate this problem.
+
+60 5 Feasibility for CBF-Based Optimal Control Using Machine Learning
+Algorithm 1: Feasibility-Guided Optimization (FGO) algorithm
+Input: Constraints (5.1), K in (2.17), system ( 2.11) with ( 2.19), N
+Output: p∗, q∗, Dmin
+1. Sample p, q in the deﬁnition of the HOCBF;
+2. Discard samples that do not meet the initial conditions of HOCBF constraint ( 3.8);
+3. Solve (5.3) for each sample for t ∈[ 0, T] and label all samples;
+4. Select balanced training and testing data sets;
+5. Use machine learning techniques to ﬁnd classiﬁer ( 5.7);
+6. Pick a feasible p0, q0, Dmin = D j( p0, q0), iter.= 1;
+while iter .++≤ N do
+Evaluate ∂D j
+∂ p1 ,..., ∂D j
+∂ pm ,∂D j
+∂q1 ,..., ∂D j
+∂qm at p0, q0 with random perturbation to pk or
+qk, k ∈{ 1, 2,..., m};
+if ∂D j
+∂ pk , ∂D j
+∂qk , ∀k ∈{ 1, 2,..., m} is infeasible to evaluate over sub-problem (i) for all
+times in [0, T] then
+Jump to the very begining of the loop;
+else
+∂D j
+∂ pk = 0, ∂D j
+∂qk = 0, ∃k ∈{ 1, 2,..., m} is infeasible to evaluate over sub-problem (i)
+for all times in [0, T];
+end
+Solve the optimization ( 5.12) and get new p, q;
+Solve the problem ( 5.3) with p, q;
+if (5.3) is feasible for all t ∈[ 0, T] then
+if Dmin ≥ D j( p, q) then
+Dmin = D j( p, q), p0 = p, q0 = q;
+else
+break;
+end
+else
+Solve the optimization ( 5.12) without (5.10) and get new p, q;
+Solve the problem ( 5.3) with p, q;
+if Dmin ≥ D j( p, q) then
+Dmin = D j( p, q), p0 = p, q0 = q;
+else
+break;
+end
+end
+end
+p∗ = p0, q∗ = q0;
+
+5.1 Learning CBF Parameters for Feasibility 61
+Note that we can update the training set and get a new classiﬁer in ( 5.8) after running the
+FGO algorithm for a number of different initial samples p0, q0, i.e., re-initialize ( 5.9) for
+each FGO process. Once we have learned feasibility and robustness for some known types
+of unsafe sets with the FGO algorithm, we can use these unsafe sets to approximate other
+types of unsafe sets.
+Remark 5.1 (Time complexities of subproblems SP1 and SP2). The time complexity of
+SP1, i.e., the QP ( 5.3), is O(d
+3),w h e r ed = q + 1 is the dimension of decision variables.
+Since the CBF method (after pre-training) does not need planning, it is more computationally
+efﬁcient than path planning methods, such as Rapidly-exploring Randomized Trees (RRT)
+[29] and A* [ 22]. On the other hand, the time complexity of SP2 is that of a LP [ 66],
+i.e., O((d + c)
+1.5dL ), where d, c are the numbers of decision variables and constraints,
+respectively, and L is a given parameter. Thus, the complexity of the FGO algorithm is
+almost the same as the GD one, as it just has one more constraint than the GD method,
+hence the computational times are comparable.
+5.1.5 Robot Control Using Feasibility-Guided Optimization
+In this section, we apply the FGO algorithm to a robot control problem in a MA TLAB
+setting and show several simulations results. The robot moves is an environment with several
+obstacles of the same type, but the number of obstacles and their locations are unknown to
+the robot. The robot is equipped with a sensor (
+2
+3π ﬁeld of view (FOV) and 7 m sensing
+distance with 1 m uncertainty) to detect the obstacles.
+Deﬁning x := (x, y,θ,v) , u := (u1, u2), the dynamics are:
+˙x = v cos(θ), ˙y = v sin(θ),
+˙θ = u1, ˙v = u2,
+(5.13)
+where x, y denote the location along the x, y axis, respectively,θ denotes the heading angle
+of the robot, v denotes the linear speed, and u1, u2 denote the two control inputs for turning
+and acceleration, respectively.
+The objective is deﬁned to be:
+min
+u(t)
+ t f
+0
+
+u2
+1(t) + u2
+2(t)
+
+dt + p0((x(t f ) − xd)2 + (y(t f ) − yd)2). (5.14)
+In other words, we wish to minimize the energy consumption and drive the robot to a given
+destination (xd, yd) ∈ R2, i.e., drive (x(t), y(t)) to (xd, yd), ∀t ∈[ t	, t f ], for some t	 ∈
+[0, t f ]. The robot dynamics are not full-state linearizable [ 26] and the relative degree of
+the position (output) is 2. Therefore, we cannot directly apply a CLF. However, the robot

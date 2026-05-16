@@ -272,6 +272,13 @@ class MLCBFParameterModel:
             iterations=fgo_iterations,
             population=fgo_population,
         )
+        best_observed = model._best_observed_feasible_normal_params()
+        if best_observed is not None:
+            best_observed_score = model._best_observed_feasible_score()
+            fgo_predicted_score = float(model._predict_score(best)[0])
+            if fgo_predicted_score < best_observed_score:
+                best = best_observed
+
         model.best_normal_params = best
         model.fgo_trace = trace
         return model
@@ -284,19 +291,43 @@ class MLCBFParameterModel:
     def best_params(self):
         return vector_to_params(self.best_params_vector)
 
+    def _feasible_score_data(self):
+        feasible = self.labels > 0
+        if np.any(feasible):
+            return self.train_normal_params[feasible], self.scores[feasible]
+        return self.train_normal_params, self.scores
+
+    def _best_observed_feasible_normal_params(self):
+        feasible = self.labels > 0
+        if not np.any(feasible):
+            return None
+        feasible_ids = np.flatnonzero(feasible)
+        best_id = feasible_ids[int(np.argmax(self.scores[feasible]))]
+        return self.train_normal_params[best_id].copy()
+
+    def _best_observed_feasible_score(self):
+        feasible = self.labels > 0
+        if not np.any(feasible):
+            return -np.inf
+        return float(np.max(self.scores[feasible]))
+
     def _predict_score(self, normal_params):
         normal_params = np.asarray(normal_params, dtype=float)
         if normal_params.ndim == 1:
             normal_params = normal_params.reshape(1, -1)
 
-        diff = normal_params[:, None, :] - self.train_normal_params[None, :, :]
+        train_normal_params, scores = self._feasible_score_data()
+        if len(scores) == 0:
+            return np.zeros(normal_params.shape[0], dtype=float)
+
+        diff = normal_params[:, None, :] - train_normal_params[None, :, :]
         dist2 = np.sum(diff * diff, axis=2)
         weights = np.exp(-0.5 * dist2 / max(self.score_bandwidth, 1e-6) ** 2)
         denom = np.sum(weights, axis=1)
-        fallback = float(np.mean(self.scores)) if len(self.scores) else 0.0
+        fallback = float(np.mean(scores))
         pred = np.full(normal_params.shape[0], fallback, dtype=float)
         good = denom > 1e-12
-        pred[good] = weights[good] @ self.scores / denom[good]
+        pred[good] = weights[good] @ scores / denom[good]
         return pred
 
     def _objective(self, normal_params):

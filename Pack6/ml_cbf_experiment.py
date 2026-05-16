@@ -180,8 +180,8 @@ def score_episode(metrics):
     # Path-tracking quality: reward staying close to the reference path and
     # penalize large lateral deviations more aggressively.
     score += 350.0 * np.exp(-mean_abs_cte / 0.20)
-    score -= 100.0 * mean_abs_cte
-    score -= 100.0 * max(0.0, mean_abs_cte - 0.45) ** 2
+    score -= 50.0 * mean_abs_cte
+    score -= 50.0 * max(0.0, mean_abs_cte - 0.45) ** 2
     score -= 3.0 * int(metrics["qp_failures"])
 
     if metrics["collided"]:

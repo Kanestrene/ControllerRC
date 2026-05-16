@@ -96,21 +96,19 @@ def build_problem(ds=0.01, variation_id=0):
 def make_obstacles(px, py, pyaw, n_obs=5, variation_id=0):
     n_path = len(px)
     idxs = np.linspace(0, n_path - 1, n_obs + 2, dtype=int)[1:-1]
-    radius_delta = 0.03 * np.sin(0.7 * variation_id)
-    offset_delta = 0.06 * np.cos(0.5 * variation_id)
 
     obstacles = []
     for k, idx in enumerate(idxs):
         nx = -np.sin(pyaw[idx])
         ny = np.cos(pyaw[idx])
-        side = (-1) ** (k + variation_id)
-        offset = 0.30 + offset_delta
+        side = (-1) ** k
+        offset = 0.30
 
         obstacles.append(
             {
                 "x": float(px[idx] + side * offset * nx),
                 "y": float(py[idx] + side * offset * ny),
-                "r": float(max(0.22, 0.35 + radius_delta)),
+                "r": 0.35,
             }
         )
 
@@ -166,15 +164,25 @@ def min_barrier_clearance(x, y, inner_bar, outer_bar, ellipse_ab, margin):
 
 def score_episode(metrics):
     safety_margin = min(metrics["min_obstacle_clearance"], metrics["min_barrier_clearance"])
+    mean_abs_dv = float(metrics.get("mean_abs_dv", 0.0))
+    total_abs_dv = float(metrics.get("total_abs_dv", 0.0))
     progress = float(metrics["progress_ratio"])
     score = 70.0 * progress
 
     if metrics["completed"]:
         score += 100.0
 
+    #score += 180.0 * np.clip(safety_margin, -0.5, 1.0)
+    #score -= 140.0 * max(0.0, -safety_margin) ** 2
+    #score -= 130.0 * float(metrics["mean_abs_cte"])
+    #score -= 1000.0 * mean_abs_dv
+    #score -= 10.0 * total_abs_dv
+    #score -= 3.0 * int(metrics["qp_failures"])
+
     #score += 18.0 * np.clip(safety_margin, -0.5, 1.0)
-    score -= 140.0 * max(0.0, -safety_margin) ** 2
-    score -= 6.0 * float(metrics["mean_abs_cte"])
+    score -= 3.0 * total_abs_dv
+    score -= 100.0 * max(0.0, -safety_margin) ** 2
+    score -= 200.0 * float(metrics["mean_abs_cte"])
     score -= 3.0 * int(metrics["qp_failures"])
 
     if metrics["collided"]:
@@ -213,6 +221,7 @@ def run_episode(
     lap_progress_idx = 0.0
     qp_failures = 0
     ctes = []
+    v_safe_values = []
     contexts = []
     selected_candidates = []
     active_params_history = []
@@ -276,6 +285,7 @@ def run_episode(
             )
 
         v_safe, w_safe = u_safe
+        v_safe_values.append(float(v_safe))
         last_near = clf_info["idx"]
         ctes.append(abs(float(clf_info["ey"])))
 
@@ -324,6 +334,14 @@ def run_episode(
 
     progress_ratio = min(1.0, lap_progress_idx / max(1.0, float(n_path - 1)))
     completed = progress_ratio >= 1.0
+    if len(v_safe_values) > 1:
+        abs_dv = np.abs(np.diff(np.asarray(v_safe_values, dtype=float)))
+        mean_abs_dv = float(np.mean(abs_dv))
+        total_abs_dv = float(np.sum(abs_dv))
+    else:
+        mean_abs_dv = 0.0
+        total_abs_dv = 0.0
+
     metrics = {
         "completed": bool(completed),
         "collided": bool(collided),
@@ -332,6 +350,8 @@ def run_episode(
         "qp_failures": int(qp_failures),
         "mean_abs_cte": float(np.mean(ctes)) if ctes else np.inf,
         "max_abs_cte": float(np.max(ctes)) if ctes else np.inf,
+        "mean_abs_dv": mean_abs_dv,
+        "total_abs_dv": total_abs_dv,
         "min_obstacle_clearance": float(min_obs_clear),
         "min_barrier_clearance": float(min_bar_clear),
         "contexts": np.asarray(contexts, dtype=float),

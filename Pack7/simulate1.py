@@ -4,6 +4,13 @@ from matplotlib.patches import Circle, Ellipse
 from pathlib import Path
 
 import qp
+from ml_cbf_experiment import (
+    build_problem,
+    min_barrier_clearance,
+    min_obstacle_clearance,
+    score_episode,
+    start_state_for_variation,
+)
 
 from controller import (
     wrap_to_pi,
@@ -136,6 +143,7 @@ def save_track_only():
 def simulate():
     script_dir = Path(__file__).resolve().parent
     pdf_path = script_dir / "simulate1_volta_completa.pdf"
+    variation_id = 15
 
     waypoints = [
         (3.0, 3.0),
@@ -199,34 +207,10 @@ def simulate():
         (3.0, 3.0),
     ]
 
-    px, py, pyaw, s = build_spline_path(waypoints, ds=0.01)
+    px, py, pyaw, s, obstacles, inner_bar, outer_bar = build_problem(variation_id=variation_id)
     n_path = len(px)
 
-    n_obs = 5
-    idxs = np.linspace(0, n_path - 1, n_obs + 2, dtype=int)[1:-1]
-    obstacles = []
-
-    for k, idx in enumerate(idxs):
-        x_path = px[idx]
-        y_path = py[idx]
-        yaw_path = pyaw[idx]
-
-        nx = -np.sin(yaw_path)
-        ny = np.cos(yaw_path)
-
-        side = (-1) ** k
-        offset = 0.3
-
-        ox = x_path + side * offset * nx
-        oy = y_path + side * offset * ny
-
-        obstacles.append({
-            "x": ox,
-            "y": oy,
-            "r": 0.35,
-        })
-
-    x, y, yaw, v = 2, 6, np.deg2rad(90), 0.0
+    x, y, yaw, v = start_state_for_variation(variation_id)
 
     dt = 0.02
     T = 50.0
@@ -240,11 +224,19 @@ def simulate():
 
     a_ell, b_ell = 0.30, 0.20
     margin = 0.05
+    class_k_p = 6
+    class_k_q = 1
+    alpha = 3.0
 
     last_near = 0
     hx, hy, ctes = [], [], []
+    v_safe_values = []
     lap_progress_idx = 0.0
     prev_near_idx = None
+    qp_failures = 0
+    min_obs_clear = np.inf
+    min_bar_clear = np.inf
+    collided = False
     stop_requested = False
 
     plt.ion()
@@ -314,10 +306,69 @@ def simulate():
         if show_labels:
             ax.set_title(
                 f"CLF + CBF-QP | Ld={Ld:.2f} | v={v_safe:.2f} | "
-                f"w={w_safe:.2f} | cte~{cte:.3f}"
+                f"w={w_safe:.2f} | cte~{cte:.3f} | "
+                f"p={class_k_p:.2f}, q={class_k_q:.2f}"
             )
             ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5))
         plt.pause(0.001)
+
+    def print_speed_metrics():
+        if v_safe_values:
+            mean_v = float(np.mean(np.asarray(v_safe_values, dtype=float)))
+        else:
+            mean_v = 0.0
+
+        if len(v_safe_values) > 1:
+            abs_dv = np.abs(np.diff(np.asarray(v_safe_values, dtype=float)))
+            mean_abs_dv = float(np.mean(abs_dv))
+            total_abs_dv = float(np.sum(abs_dv))
+        else:
+            mean_abs_dv = 0.0
+            total_abs_dv = 0.0
+
+        print(f"Velocidade media: {mean_v:.4f} m/s")
+        print(f"mean_abs_dv: {mean_abs_dv:.6f}")
+        print(f"total_abs_dv: {total_abs_dv:.6f}")
+
+    def build_score_metrics(completed):
+        if len(v_safe_values) > 1:
+            abs_dv = np.abs(np.diff(np.asarray(v_safe_values, dtype=float)))
+            mean_abs_dv = float(np.mean(abs_dv))
+            total_abs_dv = float(np.sum(abs_dv))
+        else:
+            mean_abs_dv = 0.0
+            total_abs_dv = 0.0
+
+        progress_ratio = min(1.0, lap_progress_idx / max(1.0, float(n_path - 1)))
+        metrics = {
+            "completed": bool(completed),
+            "collided": bool(collided),
+            "progress_ratio": float(progress_ratio),
+            "qp_failures": int(qp_failures),
+            "mean_abs_cte": float(np.mean(ctes)) if ctes else np.inf,
+            "max_abs_cte": float(np.max(ctes)) if ctes else np.inf,
+            "mean_abs_dv": mean_abs_dv,
+            "total_abs_dv": total_abs_dv,
+            "min_obstacle_clearance": float(min_obs_clear),
+            "min_barrier_clearance": float(min_bar_clear),
+        }
+        metrics["D_min"] = float(min(min_obs_clear, min_bar_clear))
+        metrics["score"] = score_episode(metrics)
+        return metrics
+
+    def print_score_summary(completed):
+        metrics = build_score_metrics(completed)
+        print(
+            "Score final: "
+            f"{metrics['score']:.6f} | "
+            f"D_min={metrics['D_min']:.6f} | "
+            f"progress={metrics['progress_ratio']:.4f} | "
+            f"mean_abs_dv={metrics['mean_abs_dv']:.6f} | "
+            f"total_abs_dv={metrics['total_abs_dv']:.6f} | "
+            f"qp_failures={metrics['qp_failures']} | "
+            f"completed={metrics['completed']} | "
+            f"collided={metrics['collided']}"
+        )
 
     for k in range(steps):
         Ld = L0 + kv * abs(v)
@@ -336,9 +387,12 @@ def simulate():
             last_path_idx=last_near,
             ellipse_ab=(a_ell, b_ell),
             margin=margin,
-            lookahead_l=0.1,
-            alpha=5,
-            eps_clf=1,
+            lookahead_l=0.2,
+            barrier_lookahead_l=0.1,
+            alpha=alpha,
+            class_k_p=class_k_p,
+            class_k_q=class_k_q,
+            eps_clf=2,
             q_clf=(1.0, 10.0, 0.01),
             W=(100000.0, 1.0),
             p_slack=50.0,
@@ -347,7 +401,11 @@ def simulate():
             w_bounds=(-w_max, w_max),
         )
 
+        if clf_info.get("qp_failed", False):
+            qp_failures += 1
+
         v_safe, w_safe = u_safe
+        v_safe_values.append(float(v_safe))
         last_near = clf_info["idx"]
         cte = clf_info["ey"]
 
@@ -375,10 +433,18 @@ def simulate():
         x += v_safe * np.cos(yaw) * dt
         y += v_safe * np.sin(yaw) * dt
         yaw = wrap_to_pi(yaw + (v_safe / L) * np.tan(delta) * dt)
+        v = float(v_safe)
+
+        obs_clear = min_obstacle_clearance(x, y, obstacles, (a_ell, b_ell), margin)
+        bar_clear = min_barrier_clearance(x, y, inner_bar, outer_bar, (a_ell, b_ell), margin)
+        min_obs_clear = min(min_obs_clear, obs_clear)
+        min_bar_clear = min(min_bar_clear, bar_clear)
+        if min(obs_clear, bar_clear) < -0.35:
+            collided = True
 
         hx.append(x)
         hy.append(y)
-        ctes.append(cte)
+        ctes.append(abs(float(cte)))
 
         lap_completed = lap_progress_idx >= (n_path - 1)
 
@@ -389,6 +455,8 @@ def simulate():
             draw_frame(Ld, v_safe, w_safe, cte, show_labels=False)
             fig.savefig(pdf_path, format="pdf", bbox_inches="tight")
             print(f"Simulacao encerrada por Enter. Figura guardada em: {pdf_path}")
+            print_speed_metrics()
+            print_score_summary(completed=False)
             plt.ioff()
             plt.close(fig)
             return pdf_path
@@ -397,12 +465,26 @@ def simulate():
             draw_frame(Ld, v_safe, w_safe, cte, show_labels=False)
             fig.savefig(pdf_path, format="pdf", bbox_inches="tight")
             print(f"Volta completa. Figura guardada em: {pdf_path}")
+            print_speed_metrics()
+            print_score_summary(completed=True)
+            plt.ioff()
+            plt.close(fig)
+            return pdf_path
+
+        if collided:
+            draw_frame(Ld, v_safe, w_safe, cte, show_labels=False)
+            fig.savefig(pdf_path, format="pdf", bbox_inches="tight")
+            print(f"Simulacao terminou por colisao. Figura guardada em: {pdf_path}")
+            print_speed_metrics()
+            print_score_summary(completed=False)
             plt.ioff()
             plt.close(fig)
             return pdf_path
 
     plt.ioff()
     print("A simulacao terminou por tempo maximo sem completar uma volta.")
+    print_speed_metrics()
+    print_score_summary(completed=False)
 
     fig2, ax2 = plt.subplots()
     ax2.plot(ctes)

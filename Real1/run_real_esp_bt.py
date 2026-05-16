@@ -22,8 +22,8 @@ from controller import (
 VISION_UDP_IP = "0.0.0.0"
 VISION_UDP_PORT = 5005
 VISION_TRACK_ID = 2
-ROUND_CORNER_RADIUS_M = 0.08
-ROUND_CORNER_SAMPLES = 10
+ROUND_CORNER_RADIUS_M = 0.2
+ROUND_CORNER_SAMPLES = 24
 
 
 # ============================================================
@@ -300,8 +300,8 @@ async def run_real():
 
     # parâmetros
     dt = 0.02
-    v_ref = 0.17
-    L0 = 0.3
+    v_ref = 0.3
+    L0 = 0.45
     kv = 0.0
     k_pp = 3.5
 
@@ -318,7 +318,7 @@ async def run_real():
 
     # Parâmetros bicycle/servo
     L = 0.06
-    delta_max = np.deg2rad(20)
+    delta_max = np.deg2rad(13)
     delta_rate_max = np.deg2rad(300)
     kappa_max = np.tan(delta_max) / L
 
@@ -363,9 +363,9 @@ async def run_real():
                 obstacles=obstacles,
                 ellipse_ab=(a_ell, b_ell),
                 margin=margin,
-                lookahead_l=0.1,
-                alpha=2.5,
-                W=(250.0, 1.0),
+                lookahead_l=0.15,
+                alpha=2.3,
+                W=(250000000.0, 1.0),
                 v_bounds=(0.0, 2.0),
                 w_bounds=(-w_max, w_max),
             )
@@ -394,7 +394,7 @@ async def run_real():
             else:
                 delta_send = delta
 
-            esp32_msg = await esp32.send_cmd(v=v_safe, delta= 3*delta_cmd)
+            esp32_msg = await esp32.send_cmd(v=v_safe, delta= delta)
             #esp32_msg = await esp32.send_cmd(v=0.2, delta=3.0)
 
             print(

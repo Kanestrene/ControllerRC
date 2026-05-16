@@ -31,14 +31,14 @@ DEFAULT_MODEL_PATH = Path(__file__).resolve().parent / "ml_cbf_model.npz"
 # log transform so the optimizer explores orders of magnitude evenly.
 PARAM_BOUNDS = np.array(
     [
-        [1.0, 15.0],       # alpha
+        [1.0, 8.0],       # alpha
         [0.02, 0.12],      # margin
-        [0.06, 0.25],      # obstacle lookahead
-        [0.06, 0.22],      # barrier lookahead
+        [0.01, 0.25],      # obstacle lookahead
+        [0.01, 0.22],      # barrier lookahead
         [8_000.0, 120_000.0],
         [0.5, 4.0],
         [20.0, 500.0],
-        [0.3, 2.0],        # eps_clf
+        [0.3, 3.0],        # eps_clf
     ],
     dtype=float,
 )

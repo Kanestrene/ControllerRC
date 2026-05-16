@@ -119,6 +119,8 @@ def main():
                     "progress_ratio": metrics["progress_ratio"],
                     "qp_failures": metrics["qp_failures"],
                     "mean_abs_cte": metrics["mean_abs_cte"],
+                    "mean_abs_dv": metrics["mean_abs_dv"],
+                    "total_abs_dv": metrics["total_abs_dv"],
                     "min_obstacle_clearance": metrics["min_obstacle_clearance"],
                     "min_barrier_clearance": metrics["min_barrier_clearance"],
                     **params,

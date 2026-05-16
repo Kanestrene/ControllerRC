@@ -299,7 +299,7 @@ async def run_real():
 
     # parâmetros
     dt = 0.02
-    v_ref = 0.3
+    v_ref = 0.25
 
     v_max = 0.47
     a_max = 2.0
@@ -345,8 +345,8 @@ async def run_real():
                 last_path_idx=last_near,
                 ellipse_ab=(a_ell, b_ell),
                 margin=margin,
-                lookahead_l=0.1,
-                alpha=5,
+                lookahead_l=0.15,
+                alpha=3,
                 eps_clf=6,
                 q_clf=(0.01, 7.0, 0.01),
                 W=(2500000.0, 1.0),
