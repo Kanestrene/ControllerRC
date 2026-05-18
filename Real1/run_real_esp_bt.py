@@ -301,7 +301,7 @@ async def run_real():
     # parâmetros
     dt = 0.02
     v_ref = 0.3
-    L0 = 0.45
+    L0 = 0.4
     kv = 0.0
     k_pp = 3.5
 
@@ -363,9 +363,9 @@ async def run_real():
                 obstacles=obstacles,
                 ellipse_ab=(a_ell, b_ell),
                 margin=margin,
-                lookahead_l=0.15,
-                alpha=2.3,
-                W=(250000000.0, 1.0),
+                lookahead_l=0.2,
+                alpha=2.5,
+                W=(2500000000.0, 1.0),
                 v_bounds=(0.0, 2.0),
                 w_bounds=(-w_max, w_max),
             )
@@ -393,6 +393,8 @@ async def run_real():
                 delta_send = -0.05               
             else:
                 delta_send = delta
+            
+            v_safe = v_safe - (delta**2)
 
             esp32_msg = await esp32.send_cmd(v=v_safe, delta= delta)
             #esp32_msg = await esp32.send_cmd(v=0.2, delta=3.0)
